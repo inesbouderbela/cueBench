@@ -1,17 +1,18 @@
 {
   "metadata": {
-    "model_name": "gpt-4o-1120",
-    "model_type": "ChatGPTModel",
+    "model_name": "Qwen/Qwen1.5-0.5B-Chat",
+    "model_type": "LocalModel",
     "track": "internal_reasoning",
-    "base_model_type": "API",
-    "base_model_name": "gpt-4o-1120",
+    "base_model_type": "Open weight model",
+    "base_model_name": "Qwen/Qwen1.5-0.5B-Chat",
     "dataset": "cure_bench_pharse_1",
-    "additional_info": "Submission using configuration file"
+    "additional_info": "Testing open Qwen model"
   },
   "dataset": {
     "dataset_name": "cure_bench_pharse_1",
-    "dataset_path": "path/to/curebench_testset_phase1.jsonl",
+    "dataset_path": "curebench_testset_phase1.jsonl",
     "description": "CureBench 2025 test questions"
   },
-  "output_dir": "competition_test_results"
-}
+  "output_dir": "competition_test_results"}
+
+ 
