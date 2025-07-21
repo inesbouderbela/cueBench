@@ -1,16 +1,16 @@
 {
   "metadata": {
-    "model_name": "Qwen/Qwen3-8B",
+     "model_name": "Qwen/Qwen1.5-0.5B-Chat",
     "model_type": "LocalModel",
     "track": "internal_reasoning",
     "base_model_type": "Open weight model",
-    "base_model_name": "Qwen/Qwen3-8B",
+    "base_model_name": "Qwen/Qwen1.5-0.5B-Chat",
     "dataset": "cure_bench_pharse_1",
     "additional_info": "Submission using configuration file"
   },
   "dataset": {
     "dataset_name": "cure_bench_pharse_1",
-    "dataset_path": "path/to/curebench_valset.jsonl",
+    "dataset_path": "curebench_valset_pharse1.jsonl",
     "description": "CureBench 2025 val questions"
   }
 }
