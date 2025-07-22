@@ -487,50 +487,50 @@ class CompetitionKit:
 
     
 
-def create_task_classifier(config_list):
-    return AssistantAgent(
-        name="task_classifier",
+        def create_task_classifier(config_list):
+            return AssistantAgent(
+                name="task_classifier",
+                llm_config={"config_list": config_list},
+                system_message="""You are a CURE-Bench classification expert. Given a biomedical question,
+                        classify it into one of these tasks:
+                        1. Treatment Recommendation
+                        2. Adverse Event
+                        3. Drug Overview
+                        4. Drug Ingredients
+                        5. Drug Warnings and Safety
+                        6. Drug Dependence and Abuse
+                        7. Dosage and Administration
+                        8. Drug Use in Specific Populations
+                        9. Pharmacology
+                        10. Clinical Information
+                        11. Nonclinical Toxicology
+                        12. Patient-Focused Information
+                        
+                        You must ONLY respond with the exact task name. No explanation. No numbering."""
+                )
+        def create_prompt_generator(config_list):
+        return  AssistantAgent(
+        name="prompt_generator",
         llm_config={"config_list": config_list},
-        system_message="""You are a CURE-Bench classification expert. Given a biomedical question,
-                classify it into one of these tasks:
-                1. Treatment Recommendation
-                2. Adverse Event
-                3. Drug Overview
-                4. Drug Ingredients
-                5. Drug Warnings and Safety
-                6. Drug Dependence and Abuse
-                7. Dosage and Administration
-                8. Drug Use in Specific Populations
-                9. Pharmacology
-                10. Clinical Information
-                11. Nonclinical Toxicology
-                12. Patient-Focused Information
-                
-                You must ONLY respond with the exact task name. No explanation. No numbering."""
-        )
-    def create_prompt_generator(config_list):
-    return  AssistantAgent(
-    name="prompt_generator",
-    llm_config={"config_list": config_list},
-    system_message="""You are a helpful assistant specialized in generating clear and concise prompts 
-                    for biomedical question-answering tasks.
-                    
-                    Given a task type and a question, rewrite the question as a complete and optimized prompt
-                    to be passed to a language model for best answer generation.
-                    
-                    Example:
-                    Task: Dosage and Administration
-                    Question: Can I take this drug before meals?
-                    
-                    Output:
-                    What is the recommended dosage and administration guidance regarding taking this drug before meals?
-                    
-                    Respond ONLY with the prompt.
-                    """
-                    )
-    def load_config_agents():
-        with open("config/config.json", "r") as f:
-            return json.load(f)["llm_config"]
+        system_message="""You are a helpful assistant specialized in generating clear and concise prompts 
+                        for biomedical question-answering tasks.
+                        
+                        Given a task type and a question, rewrite the question as a complete and optimized prompt
+                        to be passed to a language model for best answer generation.
+                        
+                        Example:
+                        Task: Dosage and Administration
+                        Question: Can I take this drug before meals?
+                        
+                        Output:
+                        What is the recommended dosage and administration guidance regarding taking this drug before meals?
+                        
+                        Respond ONLY with the prompt.
+                        """
+                        )
+      def load_config_agents():
+            with open("config/config.json", "r") as f:
+                return json.load(f)["llm_config"]
 
         
      def _get_prediction_with_trace(self, example: Dict) -> Tuple[Dict, str]:
