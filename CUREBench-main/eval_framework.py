@@ -484,6 +484,7 @@ class CompetitionKit:
         question = example["question"]
         question_type = example["question_type"]
         config_list = [{
+             "model": "gpt-3.5-turbo",
             "api_key": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJhcHAiLCJleHAiOjE3OTk5OTk5OTksInN1YiI6MzIzNjAxNSwiYXVkIjoiV0VCIiwiaWF0IjoxNjk0MDc2ODUxfQ.TptlJXSpLQ2ae3WnsXqE-doayt8Sp1UNtnoOBX1Jbio",  
             "base_url": "https://api.openai.com/v1", 
             "temperature": 0,
