@@ -23,7 +23,8 @@ Usage:
 import json
 import os
 import sys
-from autogen import AssistantAgent
+from autogen_agentchat.agents import AssistantAgent
+
 import logging
 import argparse
 from typing import Dict, List, Optional, Any, Tuple
