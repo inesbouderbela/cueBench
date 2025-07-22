@@ -342,7 +342,7 @@ class CompetitionKit:
                 
                 if question_type == "multi_choice" or question_type == "open_ended_multi_choice":
                     # For multiple choice, compare the choice field
-                    if expected_answer !='':
+                    if expected_answer != '':
                         is_correct = prediction["choice"] == expected_answer
                     else:
                         is_correct = False
@@ -352,7 +352,7 @@ class CompetitionKit:
                         accuracy_correct_count += 1
                 elif question_type == "open_ended":
                     # For open-ended, compare the open_ended_answer field but don't count in accuracy, we have internal evaluation for open-ended questions
-                    if expected_answer !='':
+                    if expected_answer != '':
                         is_correct = prediction["open_ended_answer"] == expected_answer
                     else:
                         is_correct = False
@@ -430,117 +430,63 @@ class CompetitionKit:
                 })
         
         return dataset_list
+    
+    def create_task_classifier(self, config_list):
+        return AssistantAgent(
+            name="task_classifier",
+            llm_config={"config_list": config_list},
+            system_message="""You are a CURE-Bench classification expert. Given a biomedical question,
+                    classify it into one of these tasks:
+                    1. Treatment Recommendation
+                    2. Adverse Event
+                    3. Drug Overview
+                    4. Drug Ingredients
+                    5. Drug Warnings and Safety
+                    6. Drug Dependence and Abuse
+                    7. Dosage and Administration
+                    8. Drug Use in Specific Populations
+                    9. Pharmacology
+                    10. Clinical Information
+                    11. Nonclinical Toxicology
+                    12. Patient-Focused Information
+                    
+                    You must ONLY respond with the exact task name. No explanation. No numbering."""
+            )
+    
+    def create_prompt_generator(self, config_list):
+        return AssistantAgent(
+            name="prompt_generator",
+            llm_config={"config_list": config_list},
+            system_message="""You are a helpful assistant specialized in generating clear and concise prompts 
+                    for biomedical question-answering tasks.
+                    
+                    Given a task type and a question, rewrite the question as a complete and optimized prompt
+                    to be passed to a language model for best answer generation.
+                    
+                    Example:
+                    Task: Dosage and Administration
+                    Question: Can I take this drug before meals?
+                    
+                    Output:
+                    What is the recommended dosage and administration guidance regarding taking this drug before meals?
+                    
+                    Respond ONLY with the prompt.
+                    """
+                    )
+    
+    def load_config_agents(self):
+        with open("config/config.json", "r") as f:
+            return json.load(f)["llm_config"]
 
     
-    '''def _get_prediction_with_trace(self, example: Dict) -> Tuple[Dict, str]:
-        """Get model prediction and reasoning trace for a single example"""
-        question = example["question"]
-        question_type = example["question_type"]
-        
-        # Format prompt
-        if question_type == "multi_choice":
-            prompt = f"The following is a multiple choice question about medicine. Answer with only the letter (A, B, C, D, or E).\n\nQuestion: {question}\n\nAnswer:"
-        elif question_type == "open_ended_multi_choice" or question_type == "open_ended":
-            prompt = f"The following is an open-ended question about medicine. Provide a comprehensive answer.\n\nQuestion: {question}\n\nAnswer:"
-        
-        # Get model response and messages using the model's inference method
-        response, reasoning_trace = self.model.inference(prompt)
-        
-        # Initialize prediction dictionary
-        prediction = {
-            "choice": "",  # Use empty string instead of None
-            "open_ended_answer": ""  # Use empty string instead of None
-        }
-        
-        # Extract answer from response
-        if question_type == "multi_choice":
-            # For multiple choice, extract the letter
-            choice = self._extract_multiple_choice_answer(response)
-            # Ensure choice is never None or NULL
-            prediction["choice"] = choice if choice and str(choice).upper() not in ['NONE', 'NULL'] else ""
-            prediction["open_ended_answer"] = response.strip()  # Keep full response too
-        elif question_type == "open_ended_multi_choice":
-            # First get the detailed response
-            prediction["open_ended_answer"] = response.strip()
-            
-            # Then use meta question to get choice, if available
-            if "meta_question" in example:
-                meta_prompt = f"{example['meta_question']}Agent's answer: {response.strip()}\n\nMulti-choice answer:"
-                meta_response, meta_reasoning = self.model.inference(meta_prompt)
-                # Combine reasoning traces
-                reasoning_trace += meta_reasoning
-                # Extract the letter choice
-                choice = self._extract_multiple_choice_answer(meta_response)
-                # Ensure choice is never None or NULL
-                prediction["choice"] = choice if choice and str(choice).upper() not in ['NONE', 'NULL'] else ""
-            else:
-                # If no meta_question, try to extract choice directly from the response
-                choice = self._extract_multiple_choice_answer(response)
-                # Ensure choice is never None or NULL
-                prediction["choice"] = choice if choice and str(choice).upper() not in ['NONE', 'NULL'] else ""
-        elif question_type == "open_ended":
-            # For open-ended, only return response, use N/A for choice to avoid empty string issues
-            prediction["choice"] = "NOTAVALUE" # Use N/A instead of empty string to avoid NULL validation issues
-            prediction["open_ended_answer"] = response.strip()
-        
-        return prediction, reasoning_trace'''
-
-    
-
-        def create_task_classifier(config_list):
-            return AssistantAgent(
-                name="task_classifier",
-                llm_config={"config_list": config_list},
-                system_message="""You are a CURE-Bench classification expert. Given a biomedical question,
-                        classify it into one of these tasks:
-                        1. Treatment Recommendation
-                        2. Adverse Event
-                        3. Drug Overview
-                        4. Drug Ingredients
-                        5. Drug Warnings and Safety
-                        6. Drug Dependence and Abuse
-                        7. Dosage and Administration
-                        8. Drug Use in Specific Populations
-                        9. Pharmacology
-                        10. Clinical Information
-                        11. Nonclinical Toxicology
-                        12. Patient-Focused Information
-                        
-                        You must ONLY respond with the exact task name. No explanation. No numbering."""
-                )
-        def create_prompt_generator(config_list):
-        return  AssistantAgent(
-        name="prompt_generator",
-        llm_config={"config_list": config_list},
-        system_message="""You are a helpful assistant specialized in generating clear and concise prompts 
-                        for biomedical question-answering tasks.
-                        
-                        Given a task type and a question, rewrite the question as a complete and optimized prompt
-                        to be passed to a language model for best answer generation.
-                        
-                        Example:
-                        Task: Dosage and Administration
-                        Question: Can I take this drug before meals?
-                        
-                        Output:
-                        What is the recommended dosage and administration guidance regarding taking this drug before meals?
-                        
-                        Respond ONLY with the prompt.
-                        """
-                        )
-      def load_config_agents():
-            with open("config/config.json", "r") as f:
-                return json.load(f)["llm_config"]
-
-        
-     def _get_prediction_with_trace(self, example: Dict) -> Tuple[Dict, str]:
+    def _get_prediction_with_trace(self, example: Dict) -> Tuple[Dict, str]:
         """Get model prediction and reasoning trace for a single example"""
         question = example["question"]
         question_type = example["question_type"]
 
-        config_list = load_config_agents()
-        task_agent = create_task_classifier(config_list)
-        prompt_agent = create_prompt_generator(config_list)
+        config_list = self.load_config_agents()
+        task_agent = self.create_task_classifier(config_list)
+        prompt_agent = self.create_prompt_generator(config_list)
 
         task_msg = [{"role": "user", "content": question}]
         task_response = task_agent.generate_reply(messages=task_msg).content.strip()
@@ -554,7 +500,8 @@ class CompetitionKit:
             prompt = f"{generated_prompt}\n\nAnswer with only the letter (A, B, C, D, or E)."
         else:
             prompt = generated_prompt
-           # === STEP 5: Call main model with the final prompt
+        
+        # === STEP 5: Call main model with the final prompt
         response, model_trace = self.model.inference(prompt)
     
         # === STEP 6: Combine all reasoning
