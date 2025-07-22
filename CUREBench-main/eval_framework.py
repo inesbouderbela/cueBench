@@ -483,8 +483,13 @@ class CompetitionKit:
         """Get model prediction and reasoning trace for a single example"""
         question = example["question"]
         question_type = example["question_type"]
-
-        config_list = self.load_config_agents()
+        config_list = [{
+            "api_key": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJhcHAiLCJleHAiOjE3OTk5OTk5OTksInN1YiI6MzIzNjAxNSwiYXVkIjoiV0VCIiwiaWF0IjoxNjk0MDc2ODUxfQ.TptlJXSpLQ2ae3WnsXqE-doayt8Sp1UNtnoOBX1Jbio",  
+            "base_url": "https://api.openai.com/v1", 
+            "temperature": 0,
+            "timeout": 120
+          }]
+        
         task_agent = self.create_task_classifier(config_list)
         prompt_agent = self.create_prompt_generator(config_list)
 
