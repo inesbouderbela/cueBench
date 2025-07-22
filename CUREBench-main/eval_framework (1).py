@@ -431,126 +431,142 @@ class CompetitionKit:
         
         return dataset_list
     
-    def create_task_classifier(self, config_list):
-        return AssistantAgent(
-            name="task_classifier",
-            llm_config={"config_list": config_list},
-            system_message="""You are a CURE-Bench classification expert. Given a biomedical question,
-                    classify it into one of these tasks:
-                    1. Treatment Recommendation
-                    2. Adverse Event
-                    3. Drug Overview
-                    4. Drug Ingredients
-                    5. Drug Warnings and Safety
-                    6. Drug Dependence and Abuse
-                    7. Dosage and Administration
-                    8. Drug Use in Specific Populations
-                    9. Pharmacology
-                    10. Clinical Information
-                    11. Nonclinical Toxicology
-                    12. Patient-Focused Information
-                    
-                    You must ONLY respond with the exact task name. No explanation. No numbering."""
+    def create_task_classifier(self,llm_config):
+            return AssistantAgent(
+                name="task_classifier",
+                system_message="""
+        You are a CURE-Bench classification expert. Given a biomedical question,
+        classify it into one of these tasks:
+        1. Treatment Recommendation
+        2. Adverse Event
+        3. Drug Overview
+        4. Drug Ingredients
+        5. Drug Warnings and Safety
+        6. Drug Dependence and Abuse
+        7. Dosage and Administration
+        8. Drug Use in Specific Populations
+        9. Pharmacology
+        10. Clinical Information
+        11. Nonclinical Toxicology
+        12. Patient-Focused Information
+
+        You must ONLY respond with the exact task name. No explanation. No numbering.
+        """,
+                llm_config=llm_config
             )
     
-    def create_prompt_generator(self, config_list):
-        return AssistantAgent(
-            name="prompt_generator",
-            llm_config={"config_list": config_list},
-            system_message="""You are a helpful assistant specialized in generating clear and concise prompts 
-                    for biomedical question-answering tasks.
-                    
-                    Given a task type and a question, rewrite the question as a complete and optimized prompt
-                    to be passed to a language model for best answer generation.
-                    
-                    Example:
-                    Task: Dosage and Administration
-                    Question: Can I take this drug before meals?
-                    
-                    Output:
-                    What is the recommended dosage and administration guidance regarding taking this drug before meals?
-                    
-                    Respond ONLY with the prompt.
-                    """
-                    )
-    
-    def load_config_agents(self):
-        with open("config/config.json", "r") as f:
-            return json.load(f)["llm_config"]
+    def create_prompt_generator(self,llm_config, task, question):
+          system_msg = f"""
+            You are a powerful prompt engineer specialized in crafting strong prompts 
+            for biomedical question-answering tasks.
 
+            The current task is: {task}
+
+            The question is: {question}
+
+            
+
+            You should create a detailed prompt to be passed to a language model that instructs it to:
+
+            - Identify the task clearly,
+            - Analyze all the options carefully,
+            - Reason step-by-step about each option's correctness,
+            - Choose the best answer based on the reasoning,
+            - Provide a clear final answer.
+
+            Respond ONLY with the generated prompt text (do not add explanations or extra comments).
+            """
+          return AssistantAgent(
+                    name="prompt_generator",
+                    system_message=system_msg,
+                    llm_config=llm_config
+                )
+    
     
     def _get_prediction_with_trace(self, example: Dict) -> Tuple[Dict, str]:
-        """Get model prediction and reasoning trace for a single example"""
-        question = example["question"]
-        question_type = example["question_type"]
+    """Get model prediction and reasoning trace for a single example"""
 
-        config_list = self.load_config_agents()
-        task_agent = self.create_task_classifier(config_list)
-        prompt_agent = self.create_prompt_generator(config_list)
+    question = example["question"]
+    question_type = example["question_type"]
 
-        task_msg = [{"role": "user", "content": question}]
-        task_response = task_agent.generate_reply(messages=task_msg).content.strip()
+    # === LLM Config pour les deux agents
+    llm_config = {
+        "config_list": [
+            {
+                "model": "deepseek/deepseek-r1:free",
+                "api_key": "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",
+                "base_url": "https://openrouter.ai/api/v1",
+            }
+        ]
+    }
 
-        prompt_msg = [{"role": "user", "content": f"Task: {task_response}\nQuestion: {question}"}]
-        generated_prompt = prompt_agent.generate_reply(messages=prompt_msg).content.strip()
+    # === Step 1: Task Classification
+    task_agent = self.create_task_classifier(llm_config)
+    task = task_agent.generate_reply([{"role": "user", "content": question}]).strip()
 
-       
-        # Format prompt
-        if question_type == "multi_choice":
-            prompt = f"{generated_prompt}\n\nAnswer with only the letter (A, B, C, D, or E)."
-        else:
-            prompt = generated_prompt
-        
-        # === STEP 5: Call main model with the final prompt
-        response, model_trace = self.model.inference(prompt)
+    # Sécurité sur type du task
+    if isinstance(task, list):
+        task = ''.join(task).strip()
+
+    # === Step 2: Prompt Generation
+    prompt_agent = self.create_prompt_generator(llm_config, task, question)
+    generated_prompt = prompt_agent.generate_reply([{"role": "user", "content": ""}]).strip()
+
+    if isinstance(generated_prompt, list):
+        generated_prompt = ''.join(generated_prompt).strip()
+
+    # === Step 3: Compose final prompt to main model
+    if question_type == "multi_choice":
+        prompt = f"{generated_prompt}\n\nAnswer with only the letter (A, B, C, D, or E)."
+    else:
+        prompt = generated_prompt
+
+    # === Step 4: Call the main model
+    response, model_trace = self.model.inference(prompt)
     
-        # === STEP 6: Combine all reasoning
-        reasoning_trace = (
-            f"[TaskClassifier]\n{task_response}\n\n"
-            f"[PromptGenerator]\n{generated_prompt}\n\n"
-            f"[LLM Answer]\n{model_trace}"
-        )
+    if isinstance(response, list):
+        response = ''.join(response).strip()
 
-         
-        
-        # Initialize prediction dictionary
-        prediction = {
-            "choice": "",  # Use empty string instead of None
-            "open_ended_answer": ""  # Use empty string instead of None
-        }
-        
-        # Extract answer from response
-        if question_type == "multi_choice":
-            # For multiple choice, extract the letter
-            choice = self._extract_multiple_choice_answer(response)
-            # Ensure choice is never None or NULL
+    # === Step 5: Init prediction dict
+    prediction = {
+        "choice": "",
+        "open_ended_answer": ""
+    }
+
+    # === Step 6: Answer Extraction
+    if question_type == "multi_choice":
+        choice = self._extract_multiple_choice_answer(response)
+        prediction["choice"] = choice if choice and str(choice).upper() not in ['NONE', 'NULL'] else ""
+        prediction["open_ended_answer"] = response.strip()
+
+    elif question_type == "open_ended_multi_choice":
+        prediction["open_ended_answer"] = response.strip()
+
+        if "meta_question" in example:
+            meta_prompt = f"{example['meta_question']} Agent's answer: {response.strip()}\n\nMulti-choice answer:"
+            meta_response, meta_reasoning = self.model.inference(meta_prompt)
+            if isinstance(meta_response, list):
+                meta_response = ''.join(meta_response).strip()
+            choice = self._extract_multiple_choice_answer(meta_response)
             prediction["choice"] = choice if choice and str(choice).upper() not in ['NONE', 'NULL'] else ""
-            prediction["open_ended_answer"] = response.strip()  # Keep full response too
-        elif question_type == "open_ended_multi_choice":
-            # First get the detailed response
-            prediction["open_ended_answer"] = response.strip()
-            
-            # Then use meta question to get choice, if available
-            if "meta_question" in example:
-                meta_prompt = f"{example['meta_question']}Agent's answer: {response.strip()}\n\nMulti-choice answer:"
-                meta_response, meta_reasoning = self.model.inference(meta_prompt)
-                # Combine reasoning traces
-                reasoning_trace += meta_reasoning
-                # Extract the letter choice
-                choice = self._extract_multiple_choice_answer(meta_response)
-                # Ensure choice is never None or NULL
-                prediction["choice"] = choice if choice and str(choice).upper() not in ['NONE', 'NULL'] else ""
-            else:
-                # If no meta_question, try to extract choice directly from the response
-                choice = self._extract_multiple_choice_answer(response)
-                # Ensure choice is never None or NULL
-                prediction["choice"] = choice if choice and str(choice).upper() not in ['NONE', 'NULL'] else ""
-        elif question_type == "open_ended":
-            # For open-ended, only return response, use N/A for choice to avoid empty string issues
-            prediction["choice"] = "NOTAVALUE" # Use N/A instead of empty string to avoid NULL validation issues
-            prediction["open_ended_answer"] = response.strip()
-        
-        return prediction, reasoning_trace
+            model_trace += "\n" + meta_reasoning
+        else:
+            choice = self._extract_multiple_choice_answer(response)
+            prediction["choice"] = choice if choice and str(choice).upper() not in ['NONE', 'NULL'] else ""
+
+    elif question_type == "open_ended":
+        prediction["choice"] = "NOTAVALUE"
+        prediction["open_ended_answer"] = response.strip()
+
+    # === Step 7: Reasoning trace finalisé
+    reasoning_trace = (
+        f"[TaskClassifier]\n{task}\n\n"
+        f"[PromptGenerator]\n{generated_prompt}\n\n"
+        f"[LLM Answer]\n{model_trace.strip()}"
+    )
+
+    return prediction, reasoning_trace
+
 
 
 
