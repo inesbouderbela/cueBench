@@ -23,7 +23,6 @@ Usage:
 import json
 import os
 import sys
-from autogen import AssistantAgent
 import logging
 import argparse
 from typing import Dict, List, Optional, Any, Tuple
@@ -31,6 +30,9 @@ from dataclasses import dataclass
 from tqdm import tqdm
 from abc import ABC, abstractmethod
 import csv
+import torch
+from transformers import AutoProcessor, AutoModelForImageTextToText
+
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -72,6 +74,52 @@ class BaseModel(ABC):
             Tuple of (response, messages) where messages is the complete conversation history
         """
         pass
+
+class MedGemmaModel:
+    """Wrapper for Google MedGemma model"""
+
+    def __init__(self, model_name: str):
+        self.model_name = model_name
+        self.model = None
+        self.processor = None
+
+    def load(self, **kwargs):
+        """Load MedGemma model and processor"""
+        print(f"Loading MedGemma model: {self.model_name}")
+        from transformers import AutoProcessor, AutoModelForImageTextToText
+        import torch
+
+        self.processor = AutoProcessor.from_pretrained(self.model_name)
+        self.model = AutoModelForImageTextToText.from_pretrained(
+            self.model_name,
+            torch_dtype=torch.bfloat16,
+            device_map="auto"
+        )
+
+    def inference(self, prompt: str, max_tokens: int = 256):
+        """Generate answer using MedGemma"""
+        # Format conversation like chat template
+        messages = [
+            {"role": "system", "content": [{"type": "text", "text": "You are a medical expert."}]},
+            {"role": "user", "content": [{"type": "text", "text": prompt}]}
+        ]
+
+        # Apply processor
+        inputs = self.processor.apply_chat_template(messages, return_tensors="pt").to(self.model.device)
+
+        # Generate
+        with torch.no_grad():
+            outputs = self.model.generate(**inputs, max_new_tokens=max_tokens)
+
+        # Decode text
+        response_text = self.processor.decode(outputs[0], skip_special_tokens=True).strip()
+
+        # Return response and reasoning trace (as conversation history)
+        reasoning_trace = [
+            {"role": "user", "content": prompt},
+            {"role": "assistant", "content": response_text}
+        ]
+        return response_text, reasoning_trace
 
 
 class ChatGPTModel(BaseModel):
@@ -243,8 +291,9 @@ class CompetitionKit:
             model_type = self._detect_model_type(model_name)
         
         logger.info(f"Loading model: {model_name} (type: {model_type})")
-        
-        if model_type == "chatgpt":
+        if "medgemma" in model_name.lower():
+            self.model = MedGemmaModel(model_name)
+        elif model_type == "chatgpt":
             self.model = ChatGPTModel(model_name)
         elif model_type == "local":
             self.model = LocalModel(model_name)
@@ -342,7 +391,7 @@ class CompetitionKit:
                 
                 if question_type == "multi_choice" or question_type == "open_ended_multi_choice":
                     # For multiple choice, compare the choice field
-                    if expected_answer != '':
+                    if expected_answer !='':
                         is_correct = prediction["choice"] == expected_answer
                     else:
                         is_correct = False
@@ -352,7 +401,7 @@ class CompetitionKit:
                         accuracy_correct_count += 1
                 elif question_type == "open_ended":
                     # For open-ended, compare the open_ended_answer field but don't count in accuracy, we have internal evaluation for open-ended questions
-                    if expected_answer != '':
+                    if expected_answer !='':
                         is_correct = prediction["open_ended_answer"] == expected_answer
                     else:
                         is_correct = False
@@ -430,146 +479,61 @@ class CompetitionKit:
                 })
         
         return dataset_list
-    
-    def create_task_classifier(self,llm_config):
-            return AssistantAgent(
-                name="task_classifier",
-                system_message="""
-        You are a CURE-Bench classification expert. Given a biomedical question,
-        classify it into one of these tasks:
-        1. Treatment Recommendation
-        2. Adverse Event
-        3. Drug Overview
-        4. Drug Ingredients
-        5. Drug Warnings and Safety
-        6. Drug Dependence and Abuse
-        7. Dosage and Administration
-        8. Drug Use in Specific Populations
-        9. Pharmacology
-        10. Clinical Information
-        11. Nonclinical Toxicology
-        12. Patient-Focused Information
 
-        You must ONLY respond with the exact task name. No explanation. No numbering.
-        """,
-                llm_config=llm_config
-            )
-    
-    def create_prompt_generator(self,llm_config, task, question):
-          system_msg = f"""
-            You are a powerful prompt engineer specialized in crafting strong prompts 
-            for biomedical question-answering tasks.
-
-            The current task is: {task}
-
-            The question is: {question}
-
-            
-
-            You should create a detailed prompt to be passed to a language model that instructs it to:
-
-            - Identify the task clearly,
-            - Analyze all the options carefully,
-            - Reason step-by-step about each option's correctness,
-            - Choose the best answer based on the reasoning,
-            - Provide a clear final answer.
-
-            Respond ONLY with the generated prompt text (do not add explanations or extra comments).
-            """
-          return AssistantAgent(
-                    name="prompt_generator",
-                    system_message=system_msg,
-                    llm_config=llm_config
-                )
-    
     
     def _get_prediction_with_trace(self, example: Dict) -> Tuple[Dict, str]:
-    """Get model prediction and reasoning trace for a single example"""
-
-    question = example["question"]
-    question_type = example["question_type"]
-
-    # === LLM Config pour les deux agents
-    llm_config = {
-        "config_list": [
-            {
-                "model": "deepseek/deepseek-r1:free",
-                "api_key": "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",
-                "base_url": "https://openrouter.ai/api/v1",
-            }
-        ]
-    }
-
-    # === Step 1: Task Classification
-    task_agent = self.create_task_classifier(llm_config)
-    task = task_agent.generate_reply([{"role": "user", "content": question}]).strip()
-
-    # Sécurité sur type du task
-    if isinstance(task, list):
-        task = ''.join(task).strip()
-
-    # === Step 2: Prompt Generation
-    prompt_agent = self.create_prompt_generator(llm_config, task, question)
-    generated_prompt = prompt_agent.generate_reply([{"role": "user", "content": ""}]).strip()
-
-    if isinstance(generated_prompt, list):
-        generated_prompt = ''.join(generated_prompt).strip()
-
-    # === Step 3: Compose final prompt to main model
-    if question_type == "multi_choice":
-        prompt = f"{generated_prompt}\n\nAnswer with only the letter (A, B, C, D, or E)."
-    else:
-        prompt = generated_prompt
-
-    # === Step 4: Call the main model
-    response, model_trace = self.model.inference(prompt)
-    
-    if isinstance(response, list):
-        response = ''.join(response).strip()
-
-    # === Step 5: Init prediction dict
-    prediction = {
-        "choice": "",
-        "open_ended_answer": ""
-    }
-
-    # === Step 6: Answer Extraction
-    if question_type == "multi_choice":
-        choice = self._extract_multiple_choice_answer(response)
-        prediction["choice"] = choice if choice and str(choice).upper() not in ['NONE', 'NULL'] else ""
-        prediction["open_ended_answer"] = response.strip()
-
-    elif question_type == "open_ended_multi_choice":
-        prediction["open_ended_answer"] = response.strip()
-
-        if "meta_question" in example:
-            meta_prompt = f"{example['meta_question']} Agent's answer: {response.strip()}\n\nMulti-choice answer:"
-            meta_response, meta_reasoning = self.model.inference(meta_prompt)
-            if isinstance(meta_response, list):
-                meta_response = ''.join(meta_response).strip()
-            choice = self._extract_multiple_choice_answer(meta_response)
-            prediction["choice"] = choice if choice and str(choice).upper() not in ['NONE', 'NULL'] else ""
-            model_trace += "\n" + meta_reasoning
-        else:
+        """Get model prediction and reasoning trace for a single example"""
+        question = example["question"]
+        question_type = example["question_type"]
+        
+        # Format prompt
+        if question_type == "multi_choice":
+            prompt = f"The following is a multiple choice question about medicine. Answer with only the letter (A, B, C, D, or E).\n\nQuestion: {question}\n\nAnswer:"
+        elif question_type == "open_ended_multi_choice" or question_type == "open_ended":
+            prompt = f"The following is an open-ended question about medicine. Provide a comprehensive answer.\n\nQuestion: {question}\n\nAnswer:"
+        
+        # Get model response and messages using the model's inference method
+        response, reasoning_trace = self.model.inference(prompt)
+        
+        # Initialize prediction dictionary
+        prediction = {
+            "choice": "",  # Use empty string instead of None
+            "open_ended_answer": ""  # Use empty string instead of None
+        }
+        
+        # Extract answer from response
+        if question_type == "multi_choice":
+            # For multiple choice, extract the letter
             choice = self._extract_multiple_choice_answer(response)
+            # Ensure choice is never None or NULL
             prediction["choice"] = choice if choice and str(choice).upper() not in ['NONE', 'NULL'] else ""
-
-    elif question_type == "open_ended":
-        prediction["choice"] = "NOTAVALUE"
-        prediction["open_ended_answer"] = response.strip()
-
-    # === Step 7: Reasoning trace finalisé
-    reasoning_trace = (
-        f"[TaskClassifier]\n{task}\n\n"
-        f"[PromptGenerator]\n{generated_prompt}\n\n"
-        f"[LLM Answer]\n{model_trace.strip()}"
-    )
-
-    return prediction, reasoning_trace
-
-
-
-
+            prediction["open_ended_answer"] = response.strip()  # Keep full response too
+        elif question_type == "open_ended_multi_choice":
+            # First get the detailed response
+            prediction["open_ended_answer"] = response.strip()
+            
+            # Then use meta question to get choice, if available
+            if "meta_question" in example:
+                meta_prompt = f"{example['meta_question']}Agent's answer: {response.strip()}\n\nMulti-choice answer:"
+                meta_response, meta_reasoning = self.model.inference(meta_prompt)
+                # Combine reasoning traces
+                reasoning_trace += meta_reasoning
+                # Extract the letter choice
+                choice = self._extract_multiple_choice_answer(meta_response)
+                # Ensure choice is never None or NULL
+                prediction["choice"] = choice if choice and str(choice).upper() not in ['NONE', 'NULL'] else ""
+            else:
+                # If no meta_question, try to extract choice directly from the response
+                choice = self._extract_multiple_choice_answer(response)
+                # Ensure choice is never None or NULL
+                prediction["choice"] = choice if choice and str(choice).upper() not in ['NONE', 'NULL'] else ""
+        elif question_type == "open_ended":
+            # For open-ended, only return response, use N/A for choice to avoid empty string issues
+            prediction["choice"] = "NOTAVALUE" # Use N/A instead of empty string to avoid NULL validation issues
+            prediction["open_ended_answer"] = response.strip()
+        
+        return prediction, reasoning_trace
+    
     def _extract_multiple_choice_answer(self, response: str) -> str:
         """Extract letter answer from model response"""
         if not response or response is None:
@@ -935,7 +899,6 @@ class CompetitionKit:
                 logger.info(f"Applied metadata from command line arguments")
         
         return metadata
-
 def create_metadata_parser() -> argparse.ArgumentParser:
     """
     Create command line argument parser for metadata
