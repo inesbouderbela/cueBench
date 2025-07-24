@@ -336,7 +336,8 @@ class CompetitionKit:
         
         logger.info(f"Loading model: {model_name} (type: {model_type})")
         if "medgemma" in model_name.lower():
-            self.model = MedGemmaModel(model_name)
+            self.model = MedGemmaModel("google/medgemma-4b-it", "/content/drive/MyDrive/medgemma_model")
+
         elif model_type == "chatgpt":
             self.model = ChatGPTModel(model_name)
         elif model_type == "local":
