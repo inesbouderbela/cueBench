@@ -98,28 +98,34 @@ class MedGemmaModel:
 
     def inference(self, prompt: str, max_tokens: int = 256):
         """Generate answer using MedGemma"""
-        # Format conversation like chat template
+        # Prepare chat messages
         messages = [
             {"role": "system", "content": [{"type": "text", "text": "You are a medical expert."}]},
             {"role": "user", "content": [{"type": "text", "text": prompt}]}
         ]
 
-        # Apply processor
-        inputs = self.processor.apply_chat_template(messages, return_tensors="pt").to(self.model.device)
+        # Convert messages to chat string using processor
+        chat_text = self.processor.apply_chat_template(messages, tokenize=False)
 
-        # Generate
+        # Tokenize properly
+        inputs = self.processor(chat_text, return_tensors="pt").to(self.model.device)
+
+        # Generate output
+        import torch
         with torch.no_grad():
             outputs = self.model.generate(**inputs, max_new_tokens=max_tokens)
 
-        # Decode text
+        # Decode response
         response_text = self.processor.decode(outputs[0], skip_special_tokens=True).strip()
 
-        # Return response and reasoning trace (as conversation history)
+        # Build reasoning trace
         reasoning_trace = [
             {"role": "user", "content": prompt},
             {"role": "assistant", "content": response_text}
         ]
+
         return response_text, reasoning_trace
+
 
 
 class ChatGPTModel(BaseModel):
@@ -899,6 +905,7 @@ class CompetitionKit:
                 logger.info(f"Applied metadata from command line arguments")
         
         return metadata
+
 def create_metadata_parser() -> argparse.ArgumentParser:
     """
     Create command line argument parser for metadata
