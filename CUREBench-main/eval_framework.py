@@ -78,8 +78,9 @@ class BaseModel(ABC):
 class MedGemmaModel:
     """Wrapper for Google MedGemma model"""
 
-    def __init__(self, model_name: str):
+    def __init__(self, model_name: str, cache_dir: str = None):
         self.model_name = model_name
+        self.cache_dir = cache_dir
         self.model = None
         self.processor = None
 
@@ -89,12 +90,49 @@ class MedGemmaModel:
         from transformers import AutoProcessor, AutoModelForImageTextToText
         import torch
 
-        self.processor = AutoProcessor.from_pretrained(self.model_name)
+        self.processor = AutoProcessor.from_pretrained(self.model_name, cache_dir=self.cache_dir)
         self.model = AutoModelForImageTextToText.from_pretrained(
             self.model_name,
             torch_dtype=torch.bfloat16,
-            device_map="auto"
+            device_map="auto",
+            cache_dir=self.cache_dir
         )
+
+    def inference(self, prompt: str, max_tokens: int = 256):
+        """Generate answer using MedGemma"""
+        if self.model is None or self.processor is None:
+            raise ValueError("Model is not loaded. Call load() first.")
+
+        try:
+            # Format conversation like chat template
+            messages = [
+                {"role": "system", "content": [{"type": "text", "text": "You are a medical expert."}]},
+                {"role": "user", "content": [{"type": "text", "text": prompt}]}
+            ]
+
+            # Apply processor
+            inputs = self.processor.apply_chat_template(messages, return_tensors="pt").to(self.model.device)
+
+            # Generate
+            import torch
+            with torch.no_grad():
+                outputs = self.model.generate(**inputs, max_new_tokens=max_tokens)
+
+            # Decode text
+            response_text = self.processor.decode(outputs[0], skip_special_tokens=True).strip()
+
+            # Always return two values
+            reasoning_trace = [
+                {"role": "user", "content": prompt},
+                {"role": "assistant", "content": response_text}
+            ]
+            return response_text, reasoning_trace
+
+        except Exception as e:
+            print(f"[ERROR] Inference failed: {e}")
+            # Return empty but valid structure
+            return "", [{"role": "system", "content": "Error during inference"}]
+
 
     def inference(self, prompt: str, max_tokens: int = 256):
         """Generate answer using MedGemma"""
