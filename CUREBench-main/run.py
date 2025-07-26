@@ -18,13 +18,10 @@ from eval_framework import CompetitionKit, load_and_merge_config, create_metadat
 
 
 def main():
-    # Create argument parser with metadata support
-    parser = create_metadata_parser()
     
-    args = parser.parse_args()
-    
+    path="/content/cueBench/CUREBench-main/metadata_config_val.json"
     # Load configuration from config file if provided and merge with args
-    args = load_and_merge_config(args)
+    args = load_and_merge_config(path)
     
     # Extract values dynamically with fallback defaults
     output_file = getattr(args, 'output_file', "submission.csv") 
