@@ -54,6 +54,7 @@ class MedGemmaTextModel:
 
 
 
+
 class CompetitionKit:
     """
     Simple competition framework for MedGemma evaluation
@@ -67,14 +68,13 @@ class CompetitionKit:
         os.makedirs(self.output_dir, exist_ok=True)
         self.datasets = self._load_dataset_configs(self.config)
     
-    def load_model(self, model_name: str, **kwargs):
+    def load_model(self, model_name: str):
         """
         Load MedGemma model for evaluation
         """
         self.model_name = model_name
         logger.info(f"Loading MedGemma model: {model_name}")
-        self.model = MedGemmaModel(model_name)
-        self.model.load(**kwargs)
+        self.model = MedGemmaTextModel(model, tokenizer)
     
     def _load_dataset_configs(self, config) -> Dict:
         """Load dataset configurations"""
@@ -471,28 +471,37 @@ def load_config_file(config_path):
         sys.exit(1)
 
 
-def load_and_merge_config(args):
-    """Load config file and merge values into args"""
-    if not args.config:
-        return args
-    
-    config = load_config_file(args.config)
-    
+def load_and_merge_config(config_path):
+    """Load config file from path and return an args-like object"""
+    if not os.path.exists(config_path):
+        raise FileNotFoundError(f"Config file not found: {config_path}")
+
+    # Load JSON config
+    with open(config_path, 'r') as f:
+        config = json.load(f)
+
+    # Create an empty class to store attributes dynamically
+    class Args:
+        pass
+
+    args = Args()
+
+    # Merge metadata first
     if 'metadata' in config:
-        metadata = config['metadata']
-        for key, value in metadata.items():
-            if not hasattr(args, key) or getattr(args, key) is None:
-                setattr(args, key, value)
-    
+        for key, value in config['metadata'].items():
+            setattr(args, key, value)
+
+    # Merge the rest
     def add_config_to_args(config_dict, prefix=''):
         for key, value in config_dict.items():
-            if key in ['metadata', 'dataset']:
+            if key in ['metadata']:  # Skip metadata (already processed)
                 continue
             attr_name = f"{prefix}_{key}" if prefix else key
             if isinstance(value, dict):
                 add_config_to_args(value, attr_name)
-            elif not hasattr(args, attr_name) or getattr(args, attr_name) is None:
+            else:
                 setattr(args, attr_name, value)
-    
+
     add_config_to_args(config)
+
     return args
